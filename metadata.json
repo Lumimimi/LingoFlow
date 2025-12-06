@@ -1,0 +1,7 @@
+{
+  "description": "LingoFlow - Learn languages through flow.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "name": "LingoFlow"
+}

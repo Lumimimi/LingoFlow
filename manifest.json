@@ -1,0 +1,20 @@
+{
+  "name": "LingoFlow",
+  "short_name": "LingoFlow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#022c22",
+  "theme_color": "#064e3b",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3269/3269817.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3269/3269817.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
