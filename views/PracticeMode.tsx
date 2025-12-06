@@ -59,14 +59,19 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       };
   }, []);
 
+  // 获取 API Key (优先本地存储，其次环境变量)
+  const getApiKey = () => {
+      return localStorage.getItem("lingoflow_apikey") || process.env.API_KEY;
+  };
+
   // 核心生成逻辑：创建剧本并逐句合成 TTS 音频
   // 解决了性别声音分配错误和时间戳精准度问题
   const generateContent = async () => {
     setLoading(true);
     setError(null);
     try {
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) throw new Error("API Key missing");
+      const apiKey = getApiKey();
+      if (!apiKey) throw new Error("API Key missing. Please check Settings.");
       const ai = new GoogleGenAI({ apiKey });
       const wordCount = session.difficulty * 120; 
       const lang = session.language || "German";
@@ -176,7 +181,9 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
   const analyzeWriting = async (draft: string, type: 'oral' | 'draft' | 'final') => {
     setLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = getApiKey();
+      if (!apiKey) throw new Error("API Key missing. Please check Settings.");
+      const ai = new GoogleGenAI({ apiKey });
       const lang = session.language || "German";
       const analysisPrompt = `
         Act as a strictly helpful ${lang} language editor.
@@ -203,8 +210,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       if (type === 'draft') setShowDraftFeedback(true);
       if (type === 'final') setShowFinalFeedback(true);
 
-    } catch (e) {
-      setError("Analysis failed.");
+    } catch (e: any) {
+      setError("Analysis failed: " + e.message);
     } finally {
       setLoading(false);
     }

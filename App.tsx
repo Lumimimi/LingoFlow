@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from "react";
 import { Icons } from "./components/Icons";
 import { Dashboard, BatchImportData } from "./views/Dashboard";
@@ -20,6 +21,7 @@ export default function App() {
   // UI 状态
   const [showSettings, setShowSettings] = useState(false);
   const [storageUsage, setStorageUsage] = useState<string | null>(null);
+  const [userApiKey, setUserApiKey] = useState(""); // 用户手动输入的 API Key
 
   // 引用设置菜单容器，用于检测点击外部关闭
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -27,7 +29,17 @@ export default function App() {
   // 初始化加载数据
   useEffect(() => {
     loadHistory();
+    // 加载本地保存的 API Key
+    const savedKey = localStorage.getItem("lingoflow_apikey");
+    if (savedKey) setUserApiKey(savedKey);
   }, []);
+
+  // 监听 API Key 变化并保存
+  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const key = e.target.value;
+    setUserApiKey(key);
+    localStorage.setItem("lingoflow_apikey", key);
+  };
 
   // 监听点击外部关闭设置菜单
   useEffect(() => {
@@ -279,6 +291,18 @@ export default function App() {
                 className="absolute top-full right-0 mt-2 w-72 bg-emerald-900 rounded-2xl shadow-xl shadow-black/50 border border-emerald-700 p-4 z-50"
                 onClick={(e) => e.stopPropagation()} 
               >
+                <h3 className="font-bold text-emerald-100 mb-2 text-sm">API Configuration</h3>
+                <div className="mb-4">
+                    <input 
+                      type="password" 
+                      value={userApiKey}
+                      onChange={handleApiKeyChange}
+                      placeholder="Paste Gemini API Key here"
+                      className="w-full bg-emerald-950 text-emerald-100 text-xs p-2 rounded border border-emerald-700 focus:border-emerald-500 focus:outline-none placeholder-emerald-700"
+                    />
+                    <p className="text-[9px] text-emerald-500 mt-1">Stored locally in your browser.</p>
+                </div>
+
                 <h3 className="font-bold text-emerald-100 mb-2 text-sm">Assets & Data</h3>
                 <div className="space-y-2 mb-4">
                    <label className="w-full text-xs font-bold bg-emerald-700 text-white border border-emerald-600 p-2 rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 cursor-pointer">

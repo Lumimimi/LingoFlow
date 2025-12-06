@@ -34,6 +34,11 @@ export const HybridInput = ({
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
+  // 获取 API Key (优先本地存储，其次环境变量)
+  const getApiKey = () => {
+      return localStorage.getItem("lingoflow_apikey") || process.env.API_KEY;
+  };
+
   // 开始录音
   const startRecording = async () => {
     try {
@@ -81,8 +86,8 @@ export const HybridInput = ({
   const transcribeAudio = async (blob: Blob) => {
     setTranscribing(true);
     try {
-      const apiKey = process.env.API_KEY;
-      if (!apiKey) return;
+      const apiKey = getApiKey();
+      if (!apiKey) return; // 没 Key 就不转写，仅保存录音
       const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await blobToBase64(blob);
       
