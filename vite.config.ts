@@ -14,8 +14,8 @@ export default defineConfig(({ mode }) => {
     define: {
       // 这一步非常关键！
       // 它会在构建时，把代码里的 'process.env.API_KEY' 字符串
-      // 替换为实际的 API Key 值。
-      'process.env.API_KEY': JSON.stringify("AIzaSyAkz2sBW9FX2ABnE1VC8l_S-nBVOt58kls"),
+      // 替换为实际的环境变量值。
+      'process.env.API_KEY': JSON.stringify(env.API_KEY),
     },
   };
 });
