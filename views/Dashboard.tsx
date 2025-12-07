@@ -138,7 +138,7 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
         <div className="flex items-center justify-between mb-3">
            <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2">
              <Icons.Cat className="w-5 h-5" />
-             Studio <span className="text-[9px] bg-emerald-800 text-emerald-300 px-1 rounded">v4.1</span>
+             Studio <span className="text-[9px] bg-emerald-800 text-emerald-300 px-1 rounded">v4.2</span>
            </h3>
            {/* 模式切换按钮 */}
            <div className="flex bg-emerald-900 p-1 rounded-xl border border-emerald-800">
@@ -423,7 +423,7 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
                       </div>
 
                       {/* 悬浮操作菜单 (下载/编辑/删除) */}
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-emerald-800 p-0.5 rounded-lg shadow-sm border border-emerald-700 z-20">
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-emerald-900/90 backdrop-blur p-0.5 rounded-lg shadow-lg border border-emerald-700 z-50">
                          <button onClick={(e) => {
                              e.stopPropagation();
                              if(session.aiAudioBlob) {

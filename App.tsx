@@ -8,6 +8,7 @@ import { PracticeMode } from "./views/PracticeMode";
 import { SessionData, DialogueLine, StudyLog } from "./types";
 import { saveSession, getAllSessions, deleteSession, clearDatabase } from "./db";
 import { createBatchZip } from "./utils";
+import { GoogleGenAI } from "@google/genai";
 
 // 主应用程序组件
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [storageUsage, setStorageUsage] = useState<string | null>(null);
   const [userApiKey, setUserApiKey] = useState(""); // 用户手动输入的 API Key
+  const [testingKey, setTestingKey] = useState(false); // 测试 Key 状态
 
   // 引用设置菜单容器，用于检测点击外部关闭
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -39,6 +41,26 @@ export default function App() {
     const key = e.target.value;
     setUserApiKey(key);
     localStorage.setItem("lingoflow_apikey", key);
+  };
+
+  // 测试 API 连接
+  const handleTestKey = async () => {
+    if (!userApiKey.trim()) return;
+    setTestingKey(true);
+    try {
+        const ai = new GoogleGenAI({ apiKey: userApiKey });
+        // 尝试生成一个极短的文本来验证 Key
+        await ai.models.generateContent({
+            model: "gemini-1.5-flash",
+            contents: { parts: [{ text: "Hi" }] }
+        });
+        alert("✅ Success! API Key is working correctly.");
+    } catch (e: any) {
+        console.error(e);
+        alert("❌ Error: " + (e.message || "Unknown error"));
+    } finally {
+        setTestingKey(false);
+    }
   };
 
   // 监听点击外部关闭设置菜单
@@ -212,11 +234,16 @@ export default function App() {
   }
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     if (confirm("Are you sure you want to delete this session?")) {
-      await deleteSession(id);
-      loadHistory();
-      if (currentSession?.id === id) setView("dashboard");
+      try {
+        await deleteSession(id);
+        loadHistory();
+        if (currentSession?.id === id) setView("dashboard");
+      } catch (err: any) {
+        alert("Failed to delete: " + err.message);
+      }
     }
   };
 
@@ -288,20 +315,27 @@ export default function App() {
             
             {showSettings && (
               <div 
-                className="absolute top-full right-0 mt-2 w-72 bg-emerald-900 rounded-2xl shadow-xl shadow-black/50 border border-emerald-700 p-4 z-50"
+                className="absolute top-full right-0 mt-2 w-80 bg-emerald-900 rounded-2xl shadow-xl shadow-black/50 border border-emerald-700 p-4 z-50"
                 onClick={(e) => e.stopPropagation()} 
               >
                 <h3 className="font-bold text-emerald-100 mb-2 text-sm">API Configuration</h3>
-                <div className="mb-4">
+                <div className="mb-4 flex gap-2">
                     <input 
                       type="password" 
                       value={userApiKey}
                       onChange={handleApiKeyChange}
                       placeholder="Paste Gemini API Key here"
-                      className="w-full bg-emerald-950 text-emerald-100 text-xs p-2 rounded border border-emerald-700 focus:border-emerald-500 focus:outline-none placeholder-emerald-700"
+                      className="flex-1 bg-emerald-950 text-emerald-100 text-xs p-2 rounded border border-emerald-700 focus:border-emerald-500 focus:outline-none placeholder-emerald-700"
                     />
-                    <p className="text-[9px] text-emerald-500 mt-1">Stored locally in your browser.</p>
+                    <button 
+                      onClick={handleTestKey} 
+                      disabled={!userApiKey || testingKey}
+                      className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 rounded font-bold disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {testingKey ? "..." : "Test Connection"}
+                    </button>
                 </div>
+                <p className="text-[9px] text-emerald-500 -mt-2 mb-4">Stored locally in your browser.</p>
 
                 <h3 className="font-bold text-emerald-100 mb-2 text-sm">Assets & Data</h3>
                 <div className="space-y-2 mb-4">
