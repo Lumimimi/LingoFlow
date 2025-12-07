@@ -12,10 +12,9 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      // 这一步非常关键！
-      // 它会在构建时，把代码里的 'process.env.API_KEY' 字符串
-      // 替换为实际的环境变量值。
-      'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      // 关键配置：将环境变量注入到前端代码中
+      // 优先使用 API_KEY，如果没有则尝试 VITE_API_KEY
+      'process.env.API_KEY': JSON.stringify(env.API_KEY || env.VITE_API_KEY || ""),
     },
   };
 });

@@ -14,7 +14,7 @@ export const base64ToUint8Array = (base64: string) => {
 };
 
 // 将 Blob 对象转换为 Base64 字符串
-// 用于将音频文件序列化保存到 JSON 备份中
+// 用于将音频文件序列化保存到 JSON 备份中或发送给 API
 export const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -31,16 +31,30 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// 将 Base64 字符串还原为 Blob 对象
-// 用于从 JSON 备份中恢复音频文件
-export const base64ToBlob = (base64: string, mimeType: string): Blob => {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
+// 获取 API Key 的通用函数
+// 优先级: 
+// 1. 用户在网页设置中手动输入的 (LocalStorage)
+// 2. Vercel/Node 环境注入的 (process.env.API_KEY)
+// 3. Vite 构建环境注入的 (import.meta.env.VITE_API_KEY)
+export const getApiKey = (): string | undefined => {
+  // 1. 尝试从 LocalStorage 读取
+  const localKey = localStorage.getItem("lingoflow_apikey");
+  if (localKey && localKey.trim() !== "") {
+    return localKey;
   }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
+
+  // 2. 尝试从 process.env 读取 (Vercel)
+  // 注意：在 Vite 配置中我们将 process.env.API_KEY 定义为了常量
+  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+    return process.env.API_KEY;
+  }
+
+  // 3. 尝试从 import.meta.env 读取 (Vite 标准)
+  if (import.meta.env && import.meta.env.VITE_API_KEY) {
+    return import.meta.env.VITE_API_KEY;
+  }
+
+  return undefined;
 };
 
 // 辅助函数：向 DataView 写入字符串

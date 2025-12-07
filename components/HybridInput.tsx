@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { GoogleGenAI } from "@google/genai";
-import { blobToBase64 } from "../utils";
+import { blobToBase64, getApiKey } from "../utils";
 import { AudioPlayer } from "./AudioPlayer";
 import { Icons } from "./Icons";
 
@@ -33,11 +33,6 @@ export const HybridInput = ({
   useEffect(() => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
-
-  // 获取 API Key (优先本地存储，其次环境变量)
-  const getApiKey = () => {
-      return localStorage.getItem("lingoflow_apikey") || process.env.API_KEY;
-  };
 
   // 开始录音
   const startRecording = async () => {
@@ -91,9 +86,9 @@ export const HybridInput = ({
       const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await blobToBase64(blob);
       
-      // 调用 Gemini 2.5 Flash 进行多模态识别
+      // 调用 Gemini 1.5 Flash (更稳定) 进行多模态识别
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-1.5-flash",
         contents: {
           parts: [
             { inlineData: { mimeType: blob.type.split(';')[0] || "audio/webm", data: base64Audio } },

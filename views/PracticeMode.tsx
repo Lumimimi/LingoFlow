@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { HybridInput } from "../components/HybridInput";
 import { SessionData, StudyLog } from "../types";
-import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs } from "../utils";
+import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs, getApiKey } from "../utils";
 import { Icons } from "../components/Icons";
 
 // 练习模式组件：实现 7 步闭环训练法
@@ -58,11 +58,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
           stopAutoLoop();
       };
   }, []);
-
-  // 获取 API Key (优先本地存储，其次环境变量)
-  const getApiKey = () => {
-      return localStorage.getItem("lingoflow_apikey") || process.env.API_KEY;
-  };
 
   // 核心生成逻辑：创建剧本并逐句合成 TTS 音频
   // 解决了性别声音分配错误和时间戳精准度问题

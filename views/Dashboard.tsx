@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from "react";
 import { Icons } from "../components/Icons";
 import { SessionData } from "../types";
@@ -292,11 +293,11 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
                    <label className="bg-emerald-900 p-4 rounded-3xl border border-emerald-800 hover:border-emerald-600 cursor-pointer flex flex-col justify-center items-center gap-1 group relative overflow-hidden">
                       <Icons.Music className={`w-5 h-5 ${audioFiles ? 'text-emerald-100' : 'text-emerald-500'} group-hover:text-emerald-300`}/>
                       <span className="text-[10px] font-bold text-emerald-400 truncate w-full text-center px-2">
-                        {audioFiles && audioFiles.length > 0 ? `${audioFiles.length} Audio files` : "Select Audio"}
+                        {audioFiles && audioFiles.length > 0 ? `${audioFiles.length} Audio files` : "Select Audio (MP3, WAV...)"}
                       </span>
                       <input 
                         type="file" 
-                        accept="audio/*"
+                        accept=".mp3,.wav,.m4a,.ogg,audio/*"
                         multiple 
                         className="absolute inset-0 opacity-0 cursor-pointer" 
                         onClick={(e) => (e.target as HTMLInputElement).value = ''}
@@ -422,7 +423,7 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
                       </div>
 
                       {/* 悬浮操作菜单 (下载/编辑/删除) */}
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-emerald-800 p-0.5 rounded-lg shadow-sm border border-emerald-700 z-10">
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-emerald-800 p-0.5 rounded-lg shadow-sm border border-emerald-700 z-20">
                          <button onClick={(e) => {
                              e.stopPropagation();
                              if(session.aiAudioBlob) {
@@ -449,6 +450,7 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
                          }} className="p-1 text-emerald-300 hover:text-emerald-100 hover:bg-emerald-700 rounded" title="Download Script"><Icons.FileText className="w-3 h-3"/></button>
                         <button onClick={(e) => startEditing(session, e)} className="p-1 text-emerald-300 hover:text-white hover:bg-emerald-700 rounded" title="Edit"><Icons.Edit className="w-3 h-3"/></button>
                         <button onClick={(e) => {
+                            e.preventDefault(); // 新增：防止默认行为
                             e.stopPropagation(); // 强制阻止冒泡
                             onDelete(session.id, e);
                         }} className="p-1 text-emerald-300 hover:text-red-400 hover:bg-emerald-700 rounded" title="Delete"><Icons.Trash className="w-3 h-3"/></button>
