@@ -86,9 +86,9 @@ export const HybridInput = ({
       const ai = new GoogleGenAI({ apiKey });
       const base64Audio = await blobToBase64(blob);
       
-      // 调用 Gemini 1.5 Flash (更稳定) 进行多模态识别
+      // 调用 Gemini 2.0 Flash Exp 进行多模态识别 (替代 1.5 flash)
       const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.0-flash-exp",
         contents: {
           parts: [
             { inlineData: { mimeType: blob.type.split(';')[0] || "audio/webm", data: base64Audio } },

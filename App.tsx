@@ -50,8 +50,9 @@ export default function App() {
     try {
         const ai = new GoogleGenAI({ apiKey: userApiKey });
         // 尝试生成一个极短的文本来验证 Key
+        // 使用 gemini-2.0-flash-exp 替代旧版本以避免 404
         await ai.models.generateContent({
-            model: "gemini-1.5-flash",
+            model: "gemini-2.0-flash-exp",
             contents: { parts: [{ text: "Hi" }] }
         });
         alert("✅ Success! API Key is working correctly.");

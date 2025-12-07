@@ -85,7 +85,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       `;
 
       const scriptResp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash-exp', // 使用 2.0-flash-exp 替代 2.5-flash
         contents: scriptPrompt,
         config: { responseMimeType: 'application/json' }
       });
@@ -124,7 +124,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
 
          // 调用 TTS API 生成单句
          const ttsResp = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-preview-tts',
+            model: 'gemini-2.0-flash-exp', // 使用 2.0-flash-exp 支持语音生成
             contents: { parts: [{ text: line.text }] },
             config: {
                responseModalities: ['AUDIO'],
@@ -193,7 +193,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         Keep it large and readable. No explanations, just the diff.
       `;
       const resp = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash-exp', // 使用 2.0-flash-exp
         contents: analysisPrompt
       });
       
