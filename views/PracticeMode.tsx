@@ -60,7 +60,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
   }, []);
 
   // 核心生成逻辑：创建剧本并逐句合成 TTS 音频
-  // 解决了性别声音分配错误和时间戳精准度问题
   const generateContent = async () => {
     setLoading(true);
     setError(null);
@@ -73,7 +72,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       const isMonologue = session.format === 'monologue';
       
       // 1. 生成剧本 JSON
-      // 降级为 gemini-1.5-flash 以确保文本生成功能的稳定性 (2.0/2.5 预览版可能 404)
+      // 更新 Prompt：增加 grammarNotes 字段要求
       setLoadingProgress("Writing Script...");
       const scriptPrompt = `
         Create a ${isMonologue ? 'monologue' : 'dialogue'} in ${lang} about: "${session.topic}".
@@ -81,7 +80,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         Format: JSON.
         {
           "dialogue": [{"speaker": "Speaker Name", "text": "Content..."}],
-          "vocabulary": [{"word": "${lang} word", "meaning": "English Definition"}]
+          "vocabulary": [{"word": "${lang} word", "meaning": "English Definition"}],
+          "grammarNotes": [{"phrase": "Key Phrase/Structure", "explanation": "Brief explanation"}]
         }
       `;
 
@@ -97,68 +97,74 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       const dialogueLines = scriptJson.dialogue;
 
       // 2. 识别角色并分配声音 (Gender Mapping)
-      // 提取所有不重复的角色名
       const uniqueSpeakers = Array.from(new Set(dialogueLines.map((l: any) => l.speaker)));
-      
-      // 声音池：男-女-男-男
       const voices = ['Fenrir', 'Kore', 'Puck', 'Charon'];
       const speakerVoiceMap: Record<string, string> = {};
 
       if (isMonologue) {
-         // 独白模式，所有角色都用 Fenrir
          uniqueSpeakers.forEach(s => speakerVoiceMap[s as string] = 'Fenrir');
       } else {
-         // 对话模式，按顺序分配：第一个角色->Fenrir(男), 第二个角色->Kore(女)
          uniqueSpeakers.forEach((s, idx) => {
             speakerVoiceMap[s as string] = voices[idx % voices.length];
          });
       }
 
-      // 3. 逐句生成 TTS 并记录时间戳 (Line-by-Line Generation)
+      // 3. 逐句生成 TTS 并记录时间戳
       const pcmChunks: Uint8Array[] = [];
       let currentTime = 0;
+      let hasAudio = false; // 标记是否成功生成了音频
 
       for (let i = 0; i < dialogueLines.length; i++) {
          const line = dialogueLines[i];
          const voiceName = speakerVoiceMap[line.speaker] || 'Fenrir';
          setLoadingProgress(`Synthesizing Line ${i + 1}/${dialogueLines.length}...`);
 
-         // 调用 TTS API 生成单句
-         // 必须保持 gemini-2.0-flash-exp，因为 1.5 不支持语音生成
-         const ttsResp = await ai.models.generateContent({
-            model: 'gemini-2.0-flash-exp', 
-            contents: { parts: [{ text: line.text }] },
-            config: {
-               responseModalities: ['AUDIO'],
-               speechConfig: {
-                  voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
-               }
-            }
-         });
+         try {
+             // 尝试生成语音
+             const ttsResp = await ai.models.generateContent({
+                model: 'gemini-2.0-flash-exp', 
+                contents: { parts: [{ text: line.text }] },
+                config: {
+                   responseModalities: ['AUDIO'],
+                   speechConfig: {
+                      voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
+                   }
+                }
+             });
 
-         const audioBase64 = ttsResp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-         if (audioBase64) {
-            const chunk = base64ToUint8Array(audioBase64);
-            const duration = getDurationFromPCM(chunk.length); // 计算该句时长
-            
-            // 记录精准时间戳
-            line.startTime = currentTime;
-            line.endTime = currentTime + duration;
-            
-            currentTime += duration;
-            pcmChunks.push(chunk);
+             const audioBase64 = ttsResp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+             if (audioBase64) {
+                const chunk = base64ToUint8Array(audioBase64);
+                const duration = getDurationFromPCM(chunk.length);
+                
+                line.startTime = currentTime;
+                line.endTime = currentTime + duration;
+                
+                currentTime += duration;
+                pcmChunks.push(chunk);
+                hasAudio = true;
+             }
+         } catch (e) {
+             console.warn(`Failed to generate audio for line ${i}`, e);
+             // 如果失败，仅跳过音频，保留文本，允许降级运行
          }
       }
 
-      // 4. 合并所有 PCM 片段并转为 WAV
-      setLoadingProgress("Merging Audio...");
-      const fullPCM = mergePCMs(pcmChunks);
-      const audioBlob = pcmToWav(fullPCM, 24000);
+      // 4. 合并所有 PCM 片段并转为 WAV (如果有音频)
+      let audioBlob = null;
+      if (hasAudio && pcmChunks.length > 0) {
+          setLoadingProgress("Merging Audio...");
+          const fullPCM = mergePCMs(pcmChunks);
+          audioBlob = pcmToWav(fullPCM, 24000);
+      } else {
+          setLoadingProgress("Audio generation skipped (API limits).");
+      }
 
       const updatedSession = {
         ...session,
         script: dialogueLines,
         vocabulary: scriptJson.vocabulary,
+        grammarNotes: scriptJson.grammarNotes || [], // 保存语法笔记
         aiAudioBlob: audioBlob
       };
       await onSaveProgress(updatedSession);
@@ -174,7 +180,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
     }
   };
 
-  // AI 纠错逻辑：对比用户文本和地道表达，输出红绿对比 HTML
+  // AI 纠错逻辑
   const analyzeWriting = async (draft: string, type: 'oral' | 'draft' | 'final') => {
     setLoading(true);
     try {
@@ -195,12 +201,11 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         Keep it large and readable. No explanations, just the diff.
       `;
       const resp = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // 降级为 1.5-flash 以确保稳定性
+        model: 'gemini-1.5-flash', 
         contents: analysisPrompt
       });
       
       const correctionHTML = resp.text || "";
-      // 累加反馈记录
       setAiCorrection(prev => prev + `<div class="mb-4"><h4 class="font-bold uppercase text-[10px] text-emerald-500 mb-1">${type} Review</h4>${correctionHTML}</div>`);
       
       if (type === 'oral') setShowOralFeedback(true);
@@ -214,14 +219,13 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
     }
   };
 
-  // 播放单句逻辑 (Sentence Shadowing)
+  // 播放单句逻辑
   const playLine = (startTime: number, endTime: number) => {
     if (mainAudioRef.current) {
-        stopAutoLoop(); // 停止自动循环，进入手动模式
+        stopAutoLoop(); 
         mainAudioRef.current.currentTime = startTime;
         mainAudioRef.current.play();
         
-        // 播放到结束时间自动停止
         const checkTime = () => {
             if (mainAudioRef.current && mainAudioRef.current.currentTime >= endTime) {
                 mainAudioRef.current.pause();
@@ -232,7 +236,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
     }
   };
 
-  // 停止自动循环的所有定时器
+  // 停止自动循环
   const stopAutoLoop = () => {
       if (loopTimeoutRef.current) window.clearTimeout(loopTimeoutRef.current);
       if (countdownIntervalRef.current) window.clearInterval(countdownIntervalRef.current);
@@ -241,18 +245,17 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       setActiveLineIndex(null);
   };
 
-  // 自动循环跟读逻辑 (Auto Loop) - 重写版
-  // 使用 setTimeout 替代 timeupdate 监听，解决播放卡顿问题
+  // 自动循环跟读逻辑
   const runAutoLoop = (startIndex: number = 0) => {
       if (!mainAudioRef.current) return;
       if (startIndex >= session.script.length) {
-          setShadowingMode('full'); // 结束循环
+          setShadowingMode('full'); 
           return;
       }
 
       const line = session.script[startIndex];
       if (line.startTime === undefined || line.endTime === undefined) {
-          runAutoLoop(startIndex + 1); // 跳过无效行
+          runAutoLoop(startIndex + 1); 
           return;
       }
       
@@ -263,13 +266,10 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
 
       const duration = (line.endTime - line.startTime) * 1000;
 
-      // 设置播放定时器：在句子结束时触发
       loopTimeoutRef.current = window.setTimeout(() => {
           audio.pause();
           
-          // 开始停顿倒计时 (Duration of sentence)
           let timeLeft = duration;
-          // 每100ms更新一次进度条
           countdownIntervalRef.current = window.setInterval(() => {
               timeLeft -= 100;
               setAutoLoopTimer(timeLeft);
@@ -277,7 +277,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
                   if (countdownIntervalRef.current) window.clearInterval(countdownIntervalRef.current);
                   setAutoLoopTimer(null);
                   
-                  // 递归播放下一句
                   if (shadowingMode === 'auto') {
                       runAutoLoop(startIndex + 1);
                   }
@@ -287,7 +286,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       }, duration);
   };
 
-  // 启动/停止自动循环
   useEffect(() => {
       if (shadowingMode === 'auto') {
           runAutoLoop(0);
@@ -296,7 +294,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       }
   }, [shadowingMode]);
 
-  // 完成练习，保存日志
   const finishSession = async () => {
     const newLog: StudyLog = {
       id: crypto.randomUUID(),
@@ -332,7 +329,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-10">
-       {/* 进度指示条 */}
        <div className="flex items-center justify-between px-2 overflow-x-auto pb-2">
          {[1,2,3,4,5,6,7].map((id) => (
              <div key={id} className={`h-1 flex-1 mx-1 rounded-full transition-all ${step >= id ? 'bg-emerald-500' : 'bg-emerald-900'}`} />
@@ -342,7 +338,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
           Step {step} of 7
        </div>
 
-      {/* Step 1: 盲听 */}
       {step === 1 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 text-center space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100">Blind Listen</h2>
@@ -351,7 +346,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 2: 口述摘要 */}
       {step === 2 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100 text-center">Oral Summary</h2>
@@ -389,7 +383,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 3: 精听 */}
       {step === 3 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 text-center space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100">Deep Listen</h2>
@@ -399,7 +392,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 4: 详细写作 */}
       {step === 4 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100 text-center">Detailed Write-up</h2>
@@ -437,7 +429,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 5: 复习纠错 */}
       {step === 5 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100 text-center">Review</h2>
@@ -447,12 +438,10 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 6: 影子跟读 */}
       {step === 6 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100 text-center">Shadowing</h2>
           
-          {/* 模式切换 */}
           <div className="flex justify-center gap-2 text-sm font-bold text-emerald-400 bg-emerald-800/50 p-2 rounded-xl inline-flex mx-auto flex-wrap">
              <button onClick={() => setShadowingMode('full')} className={`px-3 py-1 rounded-lg ${shadowingMode === 'full' ? 'bg-emerald-600 text-white' : 'hover:text-emerald-200'}`}>Full</button>
              <button onClick={() => setShadowingMode('sentence')} className={`px-3 py-1 rounded-lg ${shadowingMode === 'sentence' ? 'bg-emerald-600 text-white' : 'hover:text-emerald-200'}`}>Manual</button>
@@ -461,7 +450,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
              </button>
           </div>
 
-          {/* 隐藏的主音频元素，用于逐句播放 */}
           <audio ref={mainAudioRef} src={session.aiAudioBlob ? URL.createObjectURL(session.aiAudioBlob) : ""} />
 
           {shadowingMode === 'full' ? (
@@ -475,11 +463,10 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
           <div className="h-60 overflow-y-auto bg-emerald-950/50 p-4 rounded-xl space-y-2 text-base text-emerald-100 border border-emerald-800 scrollbar-thin scrollbar-thumb-emerald-700 font-medium">
              {session.script.map((line, i) => (
                 <div key={i} className={`mb-3 flex gap-3 items-start transition-all p-2 rounded-lg ${activeLineIndex === i ? 'bg-emerald-800/60 border border-emerald-600 shadow-md' : 'border border-transparent'}`}>
-                   {/* 逐句播放按钮 */}
                    {line.startTime !== undefined && (
                       <button 
                         onClick={() => {
-                            setShadowingMode('sentence'); // 切换到手动模式
+                            setShadowingMode('sentence'); 
                             playLine(line.startTime!, line.endTime!);
                         }}
                         disabled={shadowingMode === 'auto'}
@@ -491,7 +478,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
                    <div className="flex-1">
                       <strong className="text-emerald-400 text-xs uppercase tracking-wide block mb-1">{line.speaker}</strong> 
                       <p>{line.text}</p>
-                      {/* 倒计时进度条 */}
                       {activeLineIndex === i && autoLoopTimer !== null && (
                           <div className="mt-2 h-1 bg-emerald-900 rounded-full overflow-hidden">
                               <div className="h-full bg-emerald-400 transition-all duration-100" style={{ width: `${(autoLoopTimer / ((line.endTime! - line.startTime!) * 1000)) * 100}%` }}></div>
@@ -505,7 +491,6 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         </div>
       )}
 
-      {/* Step 7: 最终复述 */}
       {step === 7 && (
         <div className="bg-emerald-900 p-8 rounded-[2rem] shadow-xl shadow-emerald-950/50 border border-emerald-800 space-y-6">
           <h2 className="text-2xl font-bold text-emerald-100 text-center">Final Retell</h2>

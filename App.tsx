@@ -7,8 +7,7 @@ import { SessionHub } from "./views/SessionHub";
 import { PracticeMode } from "./views/PracticeMode";
 import { SessionData, DialogueLine, StudyLog } from "./types";
 import { saveSession, getAllSessions, deleteSession, clearDatabase } from "./db";
-import { createBatchZip } from "./utils";
-import { GoogleGenAI } from "@google/genai";
+import { createBatchZip, estimateTimestamps } from "./utils";
 
 // 主应用程序组件
 export default function App() {
@@ -23,7 +22,6 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [storageUsage, setStorageUsage] = useState<string | null>(null);
   const [userApiKey, setUserApiKey] = useState(""); // 用户手动输入的 API Key
-  const [testingKey, setTestingKey] = useState(false); // 测试 Key 状态
 
   // 引用设置菜单容器，用于检测点击外部关闭
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -41,27 +39,6 @@ export default function App() {
     const key = e.target.value;
     setUserApiKey(key);
     localStorage.setItem("lingoflow_apikey", key);
-  };
-
-  // 测试 API 连接
-  const handleTestKey = async () => {
-    if (!userApiKey.trim()) return;
-    setTestingKey(true);
-    try {
-        const ai = new GoogleGenAI({ apiKey: userApiKey });
-        // 尝试生成一个极短的文本来验证 Key
-        // 使用 gemini-1.5-flash 替代实验性版本，确保连接测试的稳定性
-        await ai.models.generateContent({
-            model: "gemini-1.5-flash",
-            contents: { parts: [{ text: "Hi" }] }
-        });
-        alert("✅ Success! API Key is working correctly.");
-    } catch (e: any) {
-        console.error(e);
-        alert("❌ Error: " + (e.message || "Unknown error"));
-    } finally {
-        setTestingKey(false);
-    }
   };
 
   // 监听点击外部关闭设置菜单
@@ -96,7 +73,6 @@ export default function App() {
   };
 
   // 创建新会话 (AI 生成)
-  // format: 'dialogue' | 'monologue'
   const createSession = async (title: string, prompt: string, difficulty: number, tags: string[], language: string, format: 'dialogue' | 'monologue') => {
     const newSession: SessionData = {
       id: crypto.randomUUID(),
@@ -110,6 +86,7 @@ export default function App() {
       format,
       script: [],
       vocabulary: [],
+      grammarNotes: [],
       aiAudioBlob: null,
       studyLogs: [],
     };
@@ -119,14 +96,44 @@ export default function App() {
 
   // 单个会话导入辅助函数
   const importSingleSession = async (title: string, language: string, tags: string[], scriptText: string, audioBlob: Blob) => {
-    // 解析脚本文本 (格式: Speaker: Text)
-    const script: DialogueLine[] = scriptText.split('\n').filter(line => line.trim()).map(line => {
+    // 1. 获取音频总时长，用于估算时间戳
+    let duration = 0;
+    try {
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        
+        // 使用 Promise.race 增加超时机制，防止加载卡死
+        const loadedMetadata = new Promise<boolean>((resolve) => {
+            audio.onloadedmetadata = () => {
+                duration = audio.duration;
+                resolve(true);
+            };
+            audio.onerror = () => resolve(false);
+        });
+
+        // 1秒超时保护
+        const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000));
+
+        await Promise.race([loadedMetadata, timeout]);
+        
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.warn("Could not determine audio duration:", e);
+    }
+
+    // 2. 解析脚本文本 (格式: Speaker: Text)
+    let script: DialogueLine[] = scriptText.split('\n').filter(line => line.trim()).map(line => {
       const parts = line.split(':');
       if (parts.length > 1) {
         return { speaker: parts[0].trim(), text: parts.slice(1).join(':').trim() };
       }
       return { speaker: "Text", text: line.trim() };
     });
+
+    // 3. 如果成功获取了时长，则自动估算每句话的开始和结束时间
+    if (duration > 0 && script.length > 0) {
+        script = estimateTimestamps(script, duration);
+    }
 
     const newSession: SessionData = {
       id: crypto.randomUUID(),
@@ -135,11 +142,12 @@ export default function App() {
       title,
       topic: "Imported Session",
       tags,
-      difficulty: Math.ceil(script.length / 20), // 粗略估算时长
+      difficulty: Math.ceil(duration / 60) || 1, 
       language,
-      format: 'monologue', // 导入的默认视为独白 (除非解析到多个角色，暂简处理)
+      format: 'monologue', 
       script,
       vocabulary: [],
+      grammarNotes: [], // 初始化为空，待练习时 AI 补充
       aiAudioBlob: audioBlob,
       studyLogs: []
     };
@@ -178,7 +186,6 @@ export default function App() {
         await importSingleSession(item.title, item.language, item.tags, item.scriptText, item.audioBlob);
      }
      loadHistory();
-     // 如果只导入了一个，直接打开它；否则停留在仪表盘
      if (data.length === 1) {
         const sessions = await getAllSessions();
         const latest = sessions.sort((a,b) => b.createdTimestamp - a.createdTimestamp)[0];
@@ -235,16 +242,13 @@ export default function App() {
   }
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (confirm("Are you sure you want to delete this session?")) {
-      try {
+    // 关键修复：确认弹窗已移至 Dashboard 组件内，此处只执行逻辑
+    try {
         await deleteSession(id);
         loadHistory();
         if (currentSession?.id === id) setView("dashboard");
-      } catch (err: any) {
+    } catch (err: any) {
         alert("Failed to delete: " + err.message);
-      }
     }
   };
 
@@ -320,21 +324,14 @@ export default function App() {
                 onClick={(e) => e.stopPropagation()} 
               >
                 <h3 className="font-bold text-emerald-100 mb-2 text-sm">API Configuration</h3>
-                <div className="mb-4 flex gap-2">
+                <div className="mb-4 flex flex-col gap-2">
                     <input 
                       type="password" 
                       value={userApiKey}
                       onChange={handleApiKeyChange}
                       placeholder="Paste Gemini API Key here"
-                      className="flex-1 bg-emerald-950 text-emerald-100 text-xs p-2 rounded border border-emerald-700 focus:border-emerald-500 focus:outline-none placeholder-emerald-700"
+                      className="w-full bg-emerald-950 text-emerald-100 text-xs p-2 rounded border border-emerald-700 focus:border-emerald-500 focus:outline-none placeholder-emerald-700"
                     />
-                    <button 
-                      onClick={handleTestKey} 
-                      disabled={!userApiKey || testingKey}
-                      className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 rounded font-bold disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {testingKey ? "..." : "Test Connection"}
-                    </button>
                 </div>
                 <p className="text-[9px] text-emerald-500 -mt-2 mb-4">Stored locally in your browser.</p>
 

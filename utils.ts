@@ -1,5 +1,5 @@
 
-import { SessionData } from "./types";
+import { SessionData, DialogueLine } from "./types";
 
 // 将 Base64 字符串转换为 Uint8Array (二进制数组)
 // 用于处理 API 返回的音频数据
@@ -43,13 +43,8 @@ export const getApiKey = (): string | undefined => {
     return localKey;
   }
 
-  // 2. 尝试从 process.env 读取 (Vercel)
-  // 注意：在 Vite 配置中我们将 process.env.API_KEY 定义为了常量
-  if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
-    return process.env.API_KEY;
-  }
-
-  // 3. 尝试从 import.meta.env 读取 (Vite 标准)
+  // 2. 尝试从 import.meta.env 读取 (Vite 标准)
+  // 这是最可靠的方式，因为它能读取到 vite.config.ts 中注入的变量
   if (import.meta.env && import.meta.env.VITE_API_KEY) {
     return import.meta.env.VITE_API_KEY;
   }
@@ -117,6 +112,26 @@ export const mergePCMs = (chunks: Uint8Array[]) => {
     offset += chunk.length;
   }
   return result;
+};
+
+// 为导入的音频估算时间戳
+// 逻辑：根据每一句的字数长度，按比例分配音频总时长
+// 这允许导入的外部音频也能支持 "自动跟读" 功能
+export const estimateTimestamps = (script: DialogueLine[], totalDuration: number) => {
+    const totalLength = script.reduce((acc, line) => acc + line.text.length, 0);
+    let currentTime = 0;
+    
+    script.forEach(line => {
+        const lineRatio = line.text.length / totalLength;
+        const lineDuration = lineRatio * totalDuration;
+        
+        line.startTime = currentTime;
+        line.endTime = currentTime + lineDuration;
+        
+        currentTime += lineDuration;
+    });
+    
+    return script;
 };
 
 // 声明全局 JSZip 对象 (通过 CDN 引入)

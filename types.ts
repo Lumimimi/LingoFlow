@@ -14,6 +14,12 @@ export interface Vocabulary {
   meaning: string; // 释义 (英语或目标语言解释)
 }
 
+// 语法笔记接口：定义 AI 提取的常用句式和语法点
+export interface GrammarNote {
+  phrase: string;      // 关键句型或短语
+  explanation: string; // 语法解释或用法说明
+}
+
 // 学习日志接口：记录每一次练习的详细产出
 export interface StudyLog {
   id: string;              // 日志唯一 ID
@@ -39,6 +45,7 @@ export interface SessionData {
   format: 'dialogue' | 'monologue'; // 生成格式: 对话 (双人) 或 独白 (单人)
   script: DialogueLine[];  // 完整的对话剧本
   vocabulary: Vocabulary[];// 重点词汇表
+  grammarNotes?: GrammarNote[]; // 语法/句式总结 (可选)
   aiAudioBlob: Blob | null;// AI 生成的 TTS 原声文件 (WAV 格式)
   studyLogs: StudyLog[];   // 所有的练习历史记录
 }

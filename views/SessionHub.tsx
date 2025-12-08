@@ -93,20 +93,39 @@ export const SessionHub = ({ session, onStartPractice }: { session: SessionData,
                       </div>
                     </div>
                   ))}
-                  {/* 词汇表 */}
-                  {session.vocabulary && session.vocabulary.length > 0 && (
-                    <div className="mt-8 pt-6 border-t border-emerald-800">
-                      <h4 className="font-bold text-emerald-400 mb-3 text-sm uppercase tracking-wide">Key Vocabulary</h4>
-                      <div className="grid gap-2">
-                        {session.vocabulary.map((v, i) => (
-                          <div key={i} className="flex items-baseline justify-between text-sm bg-emerald-800/50 p-2 rounded-lg border border-emerald-800">
-                            <span className="font-bold text-emerald-200">{v.word}</span>
-                            <span className="text-emerald-500 italic">{v.meaning}</span>
+                  
+                  {/* 知识点总结板块 */}
+                  <div className="grid md:grid-cols-2 gap-4 mt-8 pt-6 border-t border-emerald-800">
+                      {/* 词汇表 */}
+                      {session.vocabulary && session.vocabulary.length > 0 && (
+                        <div>
+                          <h4 className="font-bold text-emerald-400 mb-3 text-sm uppercase tracking-wide flex items-center gap-2"><Icons.Book className="w-4 h-4"/> Vocabulary</h4>
+                          <div className="grid gap-2">
+                            {session.vocabulary.map((v, i) => (
+                              <div key={i} className="text-sm bg-emerald-800/30 p-2 rounded-lg border border-emerald-800">
+                                <span className="font-bold text-emerald-200 block">{v.word}</span>
+                                <span className="text-emerald-500 text-xs">{v.meaning}</span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                        </div>
+                      )}
+                      
+                      {/* 语法笔记 */}
+                      {session.grammarNotes && session.grammarNotes.length > 0 && (
+                        <div>
+                          <h4 className="font-bold text-teal-400 mb-3 text-sm uppercase tracking-wide flex items-center gap-2"><Icons.Edit className="w-4 h-4"/> Grammar & Phrases</h4>
+                          <div className="grid gap-2">
+                            {session.grammarNotes.map((n, i) => (
+                              <div key={i} className="text-sm bg-teal-900/30 p-2 rounded-lg border border-teal-800">
+                                <span className="font-bold text-teal-200 block">{n.phrase}</span>
+                                <span className="text-teal-500 text-xs">{n.explanation}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
               </div>
            ) : (
              <div className="h-full flex flex-col items-center justify-center text-emerald-700 italic">

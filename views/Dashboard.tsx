@@ -138,7 +138,7 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
         <div className="flex items-center justify-between mb-3">
            <h3 className="text-sm font-bold text-emerald-500 uppercase tracking-wider flex items-center gap-2">
              <Icons.Cat className="w-5 h-5" />
-             Studio <span className="text-[9px] bg-emerald-800 text-emerald-300 px-1 rounded">v4.2</span>
+             Studio <span className="text-[9px] bg-emerald-800 text-emerald-300 px-1 rounded">v4.3</span>
            </h3>
            {/* 模式切换按钮 */}
            <div className="flex bg-emerald-900 p-1 rounded-xl border border-emerald-800">
@@ -450,9 +450,12 @@ export const Dashboard = ({ history, onCreate, onImport, onOpen, onDelete, onUpd
                          }} className="p-1 text-emerald-300 hover:text-emerald-100 hover:bg-emerald-700 rounded" title="Download Script"><Icons.FileText className="w-3 h-3"/></button>
                         <button onClick={(e) => startEditing(session, e)} className="p-1 text-emerald-300 hover:text-white hover:bg-emerald-700 rounded" title="Edit"><Icons.Edit className="w-3 h-3"/></button>
                         <button onClick={(e) => {
-                            e.preventDefault(); // 新增：防止默认行为
-                            e.stopPropagation(); // 强制阻止冒泡
-                            onDelete(session.id, e);
+                            // 修复删除按钮：确保阻止冒泡并弹出确认
+                            e.preventDefault(); 
+                            e.stopPropagation();
+                            if (window.confirm("Delete this session permanently?")) {
+                                onDelete(session.id, e);
+                            }
                         }} className="p-1 text-emerald-300 hover:text-red-400 hover:bg-emerald-700 rounded" title="Delete"><Icons.Trash className="w-3 h-3"/></button>
                       </div>
                     </>
