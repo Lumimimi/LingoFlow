@@ -122,7 +122,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          try {
              // 尝试生成语音
              const ttsResp = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp',
+                model: 'gemini-2.5-flash-tts',
                 contents: { parts: [{ text: line.text }] },
                 config: {
                    responseModalities: ['AUDIO'],
