@@ -86,7 +86,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       `;
 
       const scriptResp = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', 
+        model: 'models/gemini-1.5-flash',
         contents: scriptPrompt,
         config: { responseMimeType: 'application/json' }
       });
@@ -122,7 +122,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          try {
              // 尝试生成语音
              const ttsResp = await ai.models.generateContent({
-                model: 'gemini-2.0-flash-exp', 
+                model: 'models/gemini-2.0-flash-exp',
                 contents: { parts: [{ text: line.text }] },
                 config: {
                    responseModalities: ['AUDIO'],
@@ -201,7 +201,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
         Keep it large and readable. No explanations, just the diff.
       `;
       const resp = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', 
+        model: 'models/gemini-1.5-flash',
         contents: analysisPrompt
       });
       
