@@ -88,7 +88,7 @@ export const HybridInput = ({
       
       // 调用 Gemini 1.5 Flash 进行多模态识别 (降级以确保兼容性)
       const response = await ai.models.generateContent({
-        model: "models/gemini-1.5-flash",
+        model: "gemini-1.5-flash",
         contents: {
           parts: [
             { inlineData: { mimeType: blob.type.split(';')[0] || "audio/webm", data: base64Audio } },
