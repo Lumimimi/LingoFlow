@@ -32,7 +32,7 @@ export const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 // 获取 API Key 的通用函数
-// 优先级: 
+// 优先级:
 // 1. 用户在网页设置中手动输入的 (LocalStorage)
 // 2. Vercel/Node 环境注入的 (process.env.API_KEY)
 // 3. Vite 构建环境注入的 (import.meta.env.VITE_API_KEY)
@@ -50,6 +50,77 @@ export const getApiKey = (): string | undefined => {
   }
 
   return undefined;
+};
+
+// 使用 Google Cloud Text-to-Speech API 生成语音
+export const generateSpeechWithCloudTTS = async (text: string, languageCode: string = "de-DE"): Promise<Blob | null> => {
+  const apiKey = getApiKey();
+  if (!apiKey) return null;
+
+  // 根据语言选择合适的声音
+  const voiceMap: Record<string, { name: string; gender: string }> = {
+    "German": { name: "de-DE-Standard-A", gender: "FEMALE" },
+    "English": { name: "en-US-Standard-A", gender: "FEMALE" },
+    "Chinese": { name: "cmn-CN-Standard-A", gender: "FEMALE" },
+    "Spanish": { name: "es-ES-Standard-A", gender: "FEMALE" },
+    "French": { name: "fr-FR-Standard-A", gender: "FEMALE" },
+    "Italian": { name: "it-IT-Standard-A", gender: "FEMALE" },
+    "Japanese": { name: "ja-JP-Standard-A", gender: "FEMALE" },
+    "Korean": { name: "ko-KR-Standard-A", gender: "FEMALE" },
+  };
+
+  // 语言代码映射
+  const langCodeMap: Record<string, string> = {
+    "German": "de-DE",
+    "English": "en-US",
+    "Chinese": "zh-CN",
+    "Spanish": "es-ES",
+    "French": "fr-FR",
+    "Italian": "it-IT",
+    "Japanese": "ja-JP",
+    "Korean": "ko-KR",
+  };
+
+  const voice = voiceMap[languageCode] || voiceMap["German"];
+  const langCode = langCodeMap[languageCode] || "de-DE";
+
+  try {
+    const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { text },
+        voice: {
+          languageCode: langCode,
+          name: voice.name,
+          ssmlGender: voice.gender
+        },
+        audioConfig: {
+          audioEncoding: "LINEAR16",
+          sampleRateHertz: 24000
+        }
+      })
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.audioContent) {
+      // 将 base64 转换为 Blob
+      const audioData = base64ToUint8Array(data.audioContent);
+      const wavBlob = pcmToWav(audioData, 24000);
+      return wavBlob;
+    } else {
+      console.error("Cloud TTS failed:", data.error?.message || "Unknown error");
+      return null;
+    }
+  } catch (error) {
+    console.error("Cloud TTS error:", error);
+    return null;
+  }
 };
 
 // 辅助函数：向 DataView 写入字符串

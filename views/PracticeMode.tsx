@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { HybridInput } from "../components/HybridInput";
 import { SessionData, StudyLog } from "../types";
-import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs, getApiKey } from "../utils";
+import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs, getApiKey, generateSpeechWithCloudTTS } from "../utils";
 import { Icons } from "../components/Icons";
 
 // 练习模式组件：实现 7 步闭环训练法
@@ -109,40 +109,44 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          });
       }
 
-      // 3. 逐句生成 TTS 并记录时间戳
-      const pcmChunks: Uint8Array[] = [];
+      // 3. 逐句生成 TTS 并记录时间戳（使用 Cloud Text-to-Speech API）
+      const audioBlobs: Blob[] = [];
       let currentTime = 0;
       let hasAudio = false; // 标记是否成功生成了音频
 
       for (let i = 0; i < dialogueLines.length; i++) {
          const line = dialogueLines[i];
-         const voiceName = speakerVoiceMap[line.speaker] || 'Fenrir';
          setLoadingProgress(`Synthesizing Line ${i + 1}/${dialogueLines.length}...`);
 
          try {
-             // 尝试生成语音
-             const ttsResp = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-tts',
-                contents: { parts: [{ text: line.text }] },
-                config: {
-                   responseModalities: ['AUDIO'],
-                   speechConfig: {
-                      voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
-                   }
-                }
-             });
+             // 使用 Cloud TTS API 生成语音
+             const audioBlob = await generateSpeechWithCloudTTS(line.text, lang);
 
-             const audioBase64 = ttsResp.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-             if (audioBase64) {
-                const chunk = base64ToUint8Array(audioBase64);
-                const duration = getDurationFromPCM(chunk.length);
-                
-                line.startTime = currentTime;
-                line.endTime = currentTime + duration;
-                
-                currentTime += duration;
-                pcmChunks.push(chunk);
-                hasAudio = true;
+             if (audioBlob) {
+                // 创建临时 Audio 元素来获取时长
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                await new Promise<void>((resolve) => {
+                   audio.addEventListener('loadedmetadata', () => {
+                      const duration = audio.duration;
+
+                      line.startTime = currentTime;
+                      line.endTime = currentTime + duration;
+
+                      currentTime += duration;
+                      audioBlobs.push(audioBlob);
+                      hasAudio = true;
+
+                      URL.revokeObjectURL(audioUrl);
+                      resolve();
+                   });
+
+                   audio.addEventListener('error', () => {
+                      URL.revokeObjectURL(audioUrl);
+                      resolve();
+                   });
+                });
              }
          } catch (e) {
              console.warn(`Failed to generate audio for line ${i}`, e);
@@ -150,10 +154,18 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          }
       }
 
-      // 4. 合并所有 PCM 片段并转为 WAV (如果有音频)
+      // 4. 合并所有音频片段（如果有音频）
       let audioBlob = null;
-      if (hasAudio && pcmChunks.length > 0) {
+      if (hasAudio && audioBlobs.length > 0) {
           setLoadingProgress("Merging Audio...");
+          // 合并多个 WAV 文件
+          const pcmChunks: Uint8Array[] = [];
+          for (const blob of audioBlobs) {
+             const arrayBuffer = await blob.arrayBuffer();
+             // 跳过 WAV 头部（44字节），只取PCM数据
+             const pcmData = new Uint8Array(arrayBuffer.slice(44));
+             pcmChunks.push(pcmData);
+          }
           const fullPCM = mergePCMs(pcmChunks);
           audioBlob = pcmToWav(fullPCM, 24000);
       } else {
