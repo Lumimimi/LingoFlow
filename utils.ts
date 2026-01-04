@@ -53,20 +53,65 @@ export const getApiKey = (): string | undefined => {
 };
 
 // 使用 Google Cloud Text-to-Speech API 生成语音
-export const generateSpeechWithCloudTTS = async (text: string, languageCode: string = "de-DE"): Promise<Blob | null> => {
+// speakerIndex: 0-3，用于为不同角色分配不同的声音
+export const generateSpeechWithCloudTTS = async (
+  text: string,
+  languageCode: string = "German",
+  speakerIndex: number = 0
+): Promise<Blob | null> => {
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
-  // 根据语言选择合适的声音
-  const voiceMap: Record<string, { name: string; gender: string }> = {
-    "German": { name: "de-DE-Standard-A", gender: "FEMALE" },
-    "English": { name: "en-US-Standard-A", gender: "FEMALE" },
-    "Chinese": { name: "cmn-CN-Standard-A", gender: "FEMALE" },
-    "Spanish": { name: "es-ES-Standard-A", gender: "FEMALE" },
-    "French": { name: "fr-FR-Standard-A", gender: "FEMALE" },
-    "Italian": { name: "it-IT-Standard-A", gender: "FEMALE" },
-    "Japanese": { name: "ja-JP-Standard-A", gender: "FEMALE" },
-    "Korean": { name: "ko-KR-Standard-A", gender: "FEMALE" },
+  // 高品质声音配置（Neural2/Wavenet，每种语言提供4个不同的声音用于多角色对话）
+  const voiceMap: Record<string, Array<{ name: string; gender: string }>> = {
+    "German": [
+      { name: "de-DE-Neural2-F", gender: "FEMALE" },  // 女声1 - 温和自然
+      { name: "de-DE-Neural2-B", gender: "MALE" },    // 男声1 - 沉稳专业
+      { name: "de-DE-Neural2-A", gender: "FEMALE" },  // 女声2 - 清晰明亮
+      { name: "de-DE-Neural2-D", gender: "MALE" },    // 男声2 - 年轻活力
+    ],
+    "English": [
+      { name: "en-US-Neural2-F", gender: "FEMALE" },
+      { name: "en-US-Neural2-D", gender: "MALE" },
+      { name: "en-US-Neural2-C", gender: "FEMALE" },
+      { name: "en-US-Neural2-A", gender: "MALE" },
+    ],
+    "Chinese": [
+      { name: "cmn-CN-Wavenet-A", gender: "FEMALE" },
+      { name: "cmn-CN-Wavenet-B", gender: "MALE" },
+      { name: "cmn-CN-Wavenet-C", gender: "MALE" },
+      { name: "cmn-CN-Wavenet-D", gender: "FEMALE" },
+    ],
+    "Spanish": [
+      { name: "es-ES-Neural2-F", gender: "FEMALE" },
+      { name: "es-ES-Neural2-B", gender: "MALE" },
+      { name: "es-ES-Neural2-A", gender: "FEMALE" },
+      { name: "es-ES-Neural2-D", gender: "MALE" },
+    ],
+    "French": [
+      { name: "fr-FR-Neural2-A", gender: "FEMALE" },
+      { name: "fr-FR-Neural2-B", gender: "MALE" },
+      { name: "fr-FR-Neural2-C", gender: "FEMALE" },
+      { name: "fr-FR-Neural2-D", gender: "MALE" },
+    ],
+    "Italian": [
+      { name: "it-IT-Neural2-A", gender: "FEMALE" },
+      { name: "it-IT-Neural2-C", gender: "MALE" },
+      { name: "it-IT-Wavenet-A", gender: "FEMALE" },
+      { name: "it-IT-Wavenet-C", gender: "MALE" },
+    ],
+    "Japanese": [
+      { name: "ja-JP-Neural2-B", gender: "FEMALE" },
+      { name: "ja-JP-Neural2-C", gender: "MALE" },
+      { name: "ja-JP-Neural2-D", gender: "MALE" },
+      { name: "ja-JP-Wavenet-A", gender: "FEMALE" },
+    ],
+    "Korean": [
+      { name: "ko-KR-Neural2-A", gender: "FEMALE" },
+      { name: "ko-KR-Neural2-C", gender: "MALE" },
+      { name: "ko-KR-Wavenet-A", gender: "FEMALE" },
+      { name: "ko-KR-Wavenet-C", gender: "MALE" },
+    ],
   };
 
   // 语言代码映射
@@ -81,7 +126,8 @@ export const generateSpeechWithCloudTTS = async (text: string, languageCode: str
     "Korean": "ko-KR",
   };
 
-  const voice = voiceMap[languageCode] || voiceMap["German"];
+  const voices = voiceMap[languageCode] || voiceMap["German"];
+  const voice = voices[speakerIndex % voices.length]; // 循环使用声音
   const langCode = langCodeMap[languageCode] || "de-DE";
 
   try {

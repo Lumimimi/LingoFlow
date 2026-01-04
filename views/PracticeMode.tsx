@@ -96,16 +96,17 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       
       const dialogueLines = scriptJson.dialogue;
 
-      // 2. 识别角色并分配声音 (Gender Mapping)
+      // 2. 识别角色并分配声音索引（0-3对应不同的高品质声音）
       const uniqueSpeakers = Array.from(new Set(dialogueLines.map((l: any) => l.speaker)));
-      const voices = ['Fenrir', 'Kore', 'Puck', 'Charon'];
-      const speakerVoiceMap: Record<string, string> = {};
+      const speakerVoiceMap: Record<string, number> = {};
 
       if (isMonologue) {
-         uniqueSpeakers.forEach(s => speakerVoiceMap[s as string] = 'Fenrir');
+         // 独白模式：所有使用同一个声音（索引0）
+         uniqueSpeakers.forEach(s => speakerVoiceMap[s as string] = 0);
       } else {
+         // 对话模式：为每个角色分配不同的声音索引（0, 1, 2, 3）
          uniqueSpeakers.forEach((s, idx) => {
-            speakerVoiceMap[s as string] = voices[idx % voices.length];
+            speakerVoiceMap[s as string] = idx % 4;
          });
       }
 
@@ -116,11 +117,12 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
 
       for (let i = 0; i < dialogueLines.length; i++) {
          const line = dialogueLines[i];
+         const speakerIndex = speakerVoiceMap[line.speaker] || 0;
          setLoadingProgress(`Synthesizing Line ${i + 1}/${dialogueLines.length}...`);
 
          try {
-             // 使用 Cloud TTS API 生成语音
-             const audioBlob = await generateSpeechWithCloudTTS(line.text, lang);
+             // 使用 Cloud TTS API 生成语音，传入说话人索引以使用不同声音
+             const audioBlob = await generateSpeechWithCloudTTS(line.text, lang, speakerIndex);
 
              if (audioBlob) {
                 // 创建临时 Audio 元素来获取时长
@@ -134,7 +136,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
                       line.startTime = currentTime;
                       line.endTime = currentTime + duration;
 
-                      currentTime += duration;
+                      // 添加0.3秒静音间隔，避免句子之间的断句提示音
+                      currentTime += duration + 0.3;
                       audioBlobs.push(audioBlob);
                       hasAudio = true;
 
@@ -154,18 +157,31 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          }
       }
 
-      // 4. 合并所有音频片段（如果有音频）
+      // 4. 合并所有音频片段（如果有音频），在每个片段之间添加静音
       let audioBlob = null;
       if (hasAudio && audioBlobs.length > 0) {
           setLoadingProgress("Merging Audio...");
-          // 合并多个 WAV 文件
+
+          // 创建0.3秒的静音数据（24000 Hz * 0.3秒 * 2字节/采样）
+          const silenceSamples = Math.floor(24000 * 0.3);
+          const silenceData = new Uint8Array(silenceSamples * 2); // 16位采样 = 2字节
+          silenceData.fill(0); // 填充0表示静音
+
+          // 合并多个 WAV 文件，并在之间插入静音
           const pcmChunks: Uint8Array[] = [];
-          for (const blob of audioBlobs) {
+          for (let i = 0; i < audioBlobs.length; i++) {
+             const blob = audioBlobs[i];
              const arrayBuffer = await blob.arrayBuffer();
              // 跳过 WAV 头部（44字节），只取PCM数据
              const pcmData = new Uint8Array(arrayBuffer.slice(44));
              pcmChunks.push(pcmData);
+
+             // 在每个音频片段后添加静音（除了最后一个）
+             if (i < audioBlobs.length - 1) {
+                pcmChunks.push(silenceData);
+             }
           }
+
           const fullPCM = mergePCMs(pcmChunks);
           audioBlob = pcmToWav(fullPCM, 24000);
       } else {
