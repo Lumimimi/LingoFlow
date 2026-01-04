@@ -4,7 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { HybridInput } from "../components/HybridInput";
 import { SessionData, StudyLog } from "../types";
-import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs, getApiKey, generateSpeechWithCloudTTS } from "../utils";
+import { base64ToUint8Array, pcmToWav, getDurationFromPCM, mergePCMs, getApiKey, generateSpeechWithAliyunTTS } from "../utils";
 import { Icons } from "../components/Icons";
 
 // 练习模式组件：实现 7 步闭环训练法
@@ -121,8 +121,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          setLoadingProgress(`Synthesizing Line ${i + 1}/${dialogueLines.length}...`);
 
          try {
-             // 使用 Cloud TTS API 生成语音，传入说话人索引以使用不同声音
-             const audioBlob = await generateSpeechWithCloudTTS(line.text, lang, speakerIndex);
+             // 使用阿里云百炼 CosyVoice TTS 生成语音，传入说话人索引以使用不同声音
+             const audioBlob = await generateSpeechWithAliyunTTS(line.text, lang, speakerIndex);
 
              if (audioBlob) {
                 // 创建临时 Audio 元素来获取时长

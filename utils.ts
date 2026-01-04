@@ -52,6 +52,61 @@ export const getApiKey = (): string | undefined => {
   return undefined;
 };
 
+// 使用阿里云百炼 CosyVoice TTS（通过Vercel API）
+export const generateSpeechWithAliyunTTS = async (
+  text: string,
+  languageCode: string = "German",
+  speakerIndex: number = 0
+): Promise<Blob | null> => {
+  try {
+    // 阿里云CosyVoice声音映射
+    const voiceMap: Record<number, string> = {
+      0: 'longxiaochun',    // 女声1 - 温柔甜美
+      1: 'longwan',          // 男声1 - 沉稳大气
+      2: 'longyue',          // 女声2 - 知性优雅
+      3: 'longxiaobei',      // 男声2 - 年轻活力
+    };
+
+    const voice = voiceMap[speakerIndex % 4];
+
+    // 调用Vercel API endpoint
+    const apiUrl = '/api/tts';
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        voice,
+        language: languageCode
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Aliyun TTS failed:', errorData);
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.audioContent) {
+      // 将base64 PCM数据转换为Blob
+      const audioData = base64ToUint8Array(data.audioContent);
+      // 转换为WAV格式
+      const wavBlob = pcmToWav(audioData, data.sampleRate || 22050);
+      return wavBlob;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Aliyun TTS error:', error);
+    return null;
+  }
+};
+
 // 使用 Google Cloud Text-to-Speech API 生成语音
 // speakerIndex: 0-3，用于为不同角色分配不同的声音
 export const generateSpeechWithCloudTTS = async (
