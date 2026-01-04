@@ -56,55 +56,84 @@ export const getApiKey = (): string | undefined => {
 export const generateSpeechWithAliyunTTS = async (
   text: string,
   languageCode: string = "German",
-  speakerIndex: number = 0
+  speakerIndex: number = 0,
+  retries: number = 2
 ): Promise<Blob | null> => {
-  try {
-    // 阿里云CosyVoice声音映射
-    const voiceMap: Record<number, string> = {
-      0: 'longxiaochun',    // 女声1 - 温柔甜美
-      1: 'longwan',          // 男声1 - 沉稳大气
-      2: 'longyue',          // 女声2 - 知性优雅
-      3: 'longxiaobei',      // 男声2 - 年轻活力
-    };
+  // 阿里云CosyVoice声音映射
+  const voiceMap: Record<number, string> = {
+    0: 'longxiaochun',    // 女声1 - 温柔甜美
+    1: 'longwan',          // 男声1 - 沉稳大气
+    2: 'longyue',          // 女声2 - 知性优雅
+    3: 'longxiaobei',      // 男声2 - 年轻活力
+  };
 
-    const voice = voiceMap[speakerIndex % 4];
+  const voice = voiceMap[speakerIndex % 4];
+  const apiUrl = '/api/tts';
 
-    // 调用Vercel API endpoint
-    const apiUrl = '/api/tts';
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      // 创建一个带超时的 fetch 请求（40秒超时，比后端的30秒多一点）
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 40000);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        voice,
-        language: languageCode
-      })
-    });
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text,
+          voice,
+          language: languageCode
+        }),
+        signal: controller.signal
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Aliyun TTS failed:', errorData);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error(`Aliyun TTS failed (attempt ${attempt + 1}/${retries + 1}):`, errorData);
+
+        // 如果是最后一次尝试，返回 null
+        if (attempt === retries) {
+          return null;
+        }
+
+        // 等待1秒后重试
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        continue;
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.audioContent) {
+        // 将base64 PCM数据转换为Blob
+        const audioData = base64ToUint8Array(data.audioContent);
+        // 转换为WAV格式
+        const wavBlob = pcmToWav(audioData, data.sampleRate || 22050);
+        return wavBlob;
+      }
+
       return null;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error(`Aliyun TTS timeout (attempt ${attempt + 1}/${retries + 1})`);
+      } else {
+        console.error(`Aliyun TTS error (attempt ${attempt + 1}/${retries + 1}):`, error);
+      }
+
+      // 如果是最后一次尝试，返回 null
+      if (attempt === retries) {
+        return null;
+      }
+
+      // 等待1秒后重试
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
-
-    const data = await response.json();
-
-    if (data.success && data.audioContent) {
-      // 将base64 PCM数据转换为Blob
-      const audioData = base64ToUint8Array(data.audioContent);
-      // 转换为WAV格式
-      const wavBlob = pcmToWav(audioData, data.sampleRate || 22050);
-      return wavBlob;
-    }
-
-    return null;
-  } catch (error) {
-    console.error('Aliyun TTS error:', error);
-    return null;
   }
+
+  return null;
 };
 
 // 使用 Google Cloud Text-to-Speech API 生成语音

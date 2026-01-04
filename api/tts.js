@@ -123,18 +123,21 @@ function synthesizeSpeech(text, voice, apiKey) {
             const audioBase64 = message.payload.output.audio;
             const audioBuffer = Buffer.from(audioBase64, 'base64');
             audioChunks.push(audioBuffer);
+            console.log(`Received audio chunk ${audioChunks.length}, size: ${audioBuffer.length} bytes`);
           }
         }
         else if (message.header.event === 'task-finished') {
-          console.log('Task finished');
+          console.log(`Task finished. Total chunks: ${audioChunks.length}`);
           ws.close();
 
           // 合并所有音频片段
           const fullAudio = Buffer.concat(audioChunks);
+          console.log(`Full audio size: ${fullAudio.length} bytes`);
           resolve(fullAudio);
         }
         else if (message.header.event === 'task-failed') {
           hasError = true;
+          console.error('Task failed:', message.header.message);
           ws.close();
           reject(new Error(message.header.message || 'Task failed'));
         }
