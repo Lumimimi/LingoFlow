@@ -138,45 +138,64 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       let currentTime = 0;
       let hasAudio = false; // 标记是否成功生成了音频
 
-      for (let i = 0; i < dialogueLines.length; i++) {
-         const line = dialogueLines[i];
-         const speakerIndex = speakerVoiceMap[line.speaker] || 0;
-         setLoadingProgress(`Synthesizing Line ${i + 1}/${dialogueLines.length}...`);
+      // 并发生成所有音频（批量处理，每批3个请求）
+      const batchSize = 3;
+      const audioResults: Array<{ index: number; blob: Blob | null; duration: number }> = [];
 
-         try {
-             // 使用阿里云百炼 CosyVoice TTS 生成语音，传入说话人索引以使用不同声音
-             const audioBlob = await generateSpeechWithAliyunTTS(line.text, lang, speakerIndex);
+      for (let i = 0; i < dialogueLines.length; i += batchSize) {
+         const batch = dialogueLines.slice(i, i + batchSize);
+         setLoadingProgress(`Synthesizing Lines ${i + 1}-${Math.min(i + batchSize, dialogueLines.length)}/${dialogueLines.length}...`);
 
-             if (audioBlob) {
-                // 创建临时 Audio 元素来获取时长
-                const audioUrl = URL.createObjectURL(audioBlob);
-                const audio = new Audio(audioUrl);
+         // 并发生成这一批的音频
+         const batchPromises = batch.map(async (line, batchIndex) => {
+            const globalIndex = i + batchIndex;
+            const speakerIndex = speakerVoiceMap[line.speaker] || 0;
 
-                await new Promise<void>((resolve) => {
-                   audio.addEventListener('loadedmetadata', () => {
-                      const duration = audio.duration;
+            try {
+               const audioBlob = await generateSpeechWithAliyunTTS(line.text, lang, speakerIndex);
 
-                      line.startTime = currentTime;
-                      line.endTime = currentTime + duration;
+               if (audioBlob) {
+                  // 获取音频时长
+                  const audioUrl = URL.createObjectURL(audioBlob);
+                  const audio = new Audio(audioUrl);
 
-                      // 添加0.3秒静音间隔，避免句子之间的断句提示音
-                      currentTime += duration + 0.3;
-                      audioBlobs.push(audioBlob);
-                      hasAudio = true;
+                  const duration = await new Promise<number>((resolve) => {
+                     audio.addEventListener('loadedmetadata', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        resolve(audio.duration);
+                     });
 
-                      URL.revokeObjectURL(audioUrl);
-                      resolve();
-                   });
+                     audio.addEventListener('error', () => {
+                        URL.revokeObjectURL(audioUrl);
+                        resolve(0);
+                     });
+                  });
 
-                   audio.addEventListener('error', () => {
-                      URL.revokeObjectURL(audioUrl);
-                      resolve();
-                   });
-                });
-             }
-         } catch (e) {
-             console.warn(`Failed to generate audio for line ${i}`, e);
-             // 如果失败，仅跳过音频，保留文本，允许降级运行
+                  return { index: globalIndex, blob: audioBlob, duration };
+               }
+
+               return { index: globalIndex, blob: null, duration: 0 };
+            } catch (e) {
+               console.warn(`Failed to generate audio for line ${globalIndex}`, e);
+               return { index: globalIndex, blob: null, duration: 0 };
+            }
+         });
+
+         // 等待这一批完成
+         const batchResults = await Promise.all(batchPromises);
+         audioResults.push(...batchResults);
+      }
+
+      // 按顺序处理音频结果，设置时间戳
+      for (const result of audioResults) {
+         const line = dialogueLines[result.index];
+
+         if (result.blob && result.duration > 0) {
+            line.startTime = currentTime;
+            line.endTime = currentTime + result.duration;
+            currentTime += result.duration + 0.5; // 0.5秒静音间隔
+            audioBlobs.push(result.blob);
+            hasAudio = true;
          }
       }
 
