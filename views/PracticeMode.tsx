@@ -38,7 +38,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
   const [activeLineIndex, setActiveLineIndex] = useState<number | null>(null); // 当前高亮的句子
   const [autoLoopTimer, setAutoLoopTimer] = useState<number | null>(null); // 倒计时
   const mainAudioRef = useRef<HTMLAudioElement | null>(null); // Step 6 音频引用
-  
+  const [audioUrl, setAudioUrl] = useState<string>(""); // 音频URL状态
+
   // 定时器引用，用于清理
   const loopTimeoutRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
@@ -58,6 +59,28 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
           stopAutoLoop();
       };
   }, []);
+
+  // 管理音频 Blob URL 的生命周期
+  useEffect(() => {
+    if (session.aiAudioBlob) {
+      const url = URL.createObjectURL(session.aiAudioBlob);
+      setAudioUrl(url);
+
+      // 返回清理函数
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else {
+      setAudioUrl("");
+    }
+  }, [session.aiAudioBlob]);
+
+  // 当音频URL更新时，确保音频元素加载新的音频
+  useEffect(() => {
+    if (mainAudioRef.current && audioUrl) {
+      mainAudioRef.current.load();
+    }
+  }, [audioUrl]);
 
   // 核心生成逻辑：创建剧本并逐句合成 TTS 音频
   const generateContent = async () => {
@@ -157,13 +180,14 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
          }
       }
 
-      // 4. 合并所有音频片段（如果有音频），在每个片段之间添加静音
+      // 4. 合并所有音频片段（如果有音频），在每个片段之间添加静音并平滑过渡
       let audioBlob = null;
       if (hasAudio && audioBlobs.length > 0) {
           setLoadingProgress("Merging Audio...");
 
-          // 创建0.3秒的静音数据（24000 Hz * 0.3秒 * 2字节/采样）
-          const silenceSamples = Math.floor(24000 * 0.3);
+          // 创建0.5秒的静音数据（22050 Hz * 0.5秒 * 2字节/采样）
+          // 阿里云CosyVoice使用22050Hz采样率
+          const silenceSamples = Math.floor(22050 * 0.5);
           const silenceData = new Uint8Array(silenceSamples * 2); // 16位采样 = 2字节
           silenceData.fill(0); // 填充0表示静音
 
@@ -174,6 +198,33 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
              const arrayBuffer = await blob.arrayBuffer();
              // 跳过 WAV 头部（44字节），只取PCM数据
              const pcmData = new Uint8Array(arrayBuffer.slice(44));
+
+             // 对音频片段进行淡入淡出处理，消除断句音
+             const fadeSamples = 100; // 淡入淡出样本数
+
+             // 淡入处理（只对非第一个片段）
+             if (i > 0) {
+                for (let j = 0; j < fadeSamples && j < pcmData.length; j += 2) {
+                   const factor = j / fadeSamples;
+                   const sample = (pcmData[j] | (pcmData[j + 1] << 8));
+                   const newSample = Math.floor(sample * factor);
+                   pcmData[j] = newSample & 0xFF;
+                   pcmData[j + 1] = (newSample >> 8) & 0xFF;
+                }
+             }
+
+             // 淡出处理（只对非最后一个片段）
+             if (i < audioBlobs.length - 1) {
+                const startPos = Math.max(0, pcmData.length - fadeSamples * 2);
+                for (let j = startPos; j < pcmData.length; j += 2) {
+                   const factor = 1 - ((j - startPos) / (fadeSamples * 2));
+                   const sample = (pcmData[j] | (pcmData[j + 1] << 8));
+                   const newSample = Math.floor(sample * factor);
+                   pcmData[j] = newSample & 0xFF;
+                   pcmData[j + 1] = (newSample >> 8) & 0xFF;
+                }
+             }
+
              pcmChunks.push(pcmData);
 
              // 在每个音频片段后添加静音（除了最后一个）
@@ -183,7 +234,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
           }
 
           const fullPCM = mergePCMs(pcmChunks);
-          audioBlob = pcmToWav(fullPCM, 24000);
+          audioBlob = pcmToWav(fullPCM, 22050); // 使用22050Hz采样率
       } else {
           setLoadingProgress("Audio generation skipped (API limits).");
       }
@@ -478,7 +529,7 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
              </button>
           </div>
 
-          <audio ref={mainAudioRef} src={session.aiAudioBlob ? URL.createObjectURL(session.aiAudioBlob) : ""} />
+          <audio ref={mainAudioRef} src={audioUrl} />
 
           {shadowingMode === 'full' ? (
              <div className="sticky top-0 bg-emerald-900 z-10 pb-2 border-b border-emerald-800"><AudioPlayer blob={session.aiAudioBlob} label="Original" /></div>
