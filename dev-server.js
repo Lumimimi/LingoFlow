@@ -1,4 +1,5 @@
 // 本地开发服务器 - 提供 TTS API 端点
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import ttsHandler from './api/tts.js';

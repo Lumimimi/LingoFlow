@@ -27,8 +27,16 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Text is required' });
   }
 
-  // 从环境变量获取阿里云API密钥
-  const apiKey = process.env.ALIYUN_API_KEY || process.env.VITE_ALIYUN_API_KEY;
+  // 从环境变量获取阿里云API密钥，如果未设置则使用默认值（仅用于开发）
+  const apiKey = process.env.ALIYUN_API_KEY
+    || process.env.VITE_ALIYUN_API_KEY
+    || 'sk-788b3ee0c7564216833f30eeab4ff131'; // 默认开发密钥
+
+  console.log('API Key check:', {
+    ALIYUN_API_KEY: process.env.ALIYUN_API_KEY ? 'set' : 'not set',
+    VITE_ALIYUN_API_KEY: process.env.VITE_ALIYUN_API_KEY ? 'set' : 'not set',
+    final: apiKey ? apiKey.substring(0, 15) + '...' : 'NONE'
+  });
 
   if (!apiKey) {
     return res.status(500).json({ error: 'Aliyun API key not configured' });
