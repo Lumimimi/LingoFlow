@@ -68,13 +68,16 @@ export const generateSpeechWithAliyunTTS = async (
   };
 
   const voice = voiceMap[speakerIndex % 4];
-  const apiUrl = '/api/tts';
+
+  // 在开发环境使用本地 API 服务器，生产环境使用 Vercel serverless function
+  const isDev = import.meta.env.DEV;
+  const apiUrl = isDev ? 'http://localhost:3001/api/tts' : '/api/tts';
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      // 创建一个带超时的 fetch 请求（40秒超时，比后端的30秒多一点）
+      // 创建一个带超时的 fetch 请求（15秒超时，API通常3-5秒内完成）
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 40000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(apiUrl, {
         method: 'POST',
