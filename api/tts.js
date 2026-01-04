@@ -88,7 +88,7 @@ function synthesizeSpeech(text, voice, apiKey) {
         header: {
           action: 'run-task',
           task_id: taskId,
-          streaming: 'duplex'
+          streaming: 'out'
         },
         payload: {
           task_group: 'audio',
@@ -111,38 +111,48 @@ function synthesizeSpeech(text, voice, apiKey) {
     });
 
     ws.on('message', (data) => {
+      // WebSocket 消息有两种类型：
+      // 1. JSON 文本消息（事件通知）
+      // 2. 二进制消息（PCM 音频数据）
+
+      // 首先尝试解析为 JSON
       try {
-        const message = JSON.parse(data.toString());
+        const message = JSON.parse(data.toString('utf8'));
 
-        if (message.header.event === 'task-started') {
-          console.log('Task started:', message.header.task_id);
-        }
-        else if (message.header.event === 'result-generated') {
-          // 接收音频数据
-          if (message.payload && message.payload.output && message.payload.output.audio) {
-            const audioBase64 = message.payload.output.audio;
-            const audioBuffer = Buffer.from(audioBase64, 'base64');
-            audioChunks.push(audioBuffer);
-            console.log(`Received audio chunk ${audioChunks.length}, size: ${audioBuffer.length} bytes`);
+        if (message.header && message.header.event) {
+          // 这是一个JSON事件消息
+          if (message.header.event === 'task-started') {
+            console.log('Task started:', message.header.task_id);
           }
-        }
-        else if (message.header.event === 'task-finished') {
-          console.log(`Task finished. Total chunks: ${audioChunks.length}`);
-          ws.close();
+          else if (message.header.event === 'result-generated') {
+            console.log('Result generated - audio chunk should follow');
+            // 音频数据会在下一个二进制消息中发送
+          }
+          else if (message.header.event === 'task-finished') {
+            console.log(`Task finished. Total audio chunks: ${audioChunks.length}`);
+            ws.close();
 
-          // 合并所有音频片段
-          const fullAudio = Buffer.concat(audioChunks);
-          console.log(`Full audio size: ${fullAudio.length} bytes`);
-          resolve(fullAudio);
-        }
-        else if (message.header.event === 'task-failed') {
-          hasError = true;
-          console.error('Task failed:', message.header.message);
-          ws.close();
-          reject(new Error(message.header.message || 'Task failed'));
+            // 合并所有音频片段
+            const fullAudio = Buffer.concat(audioChunks);
+            console.log(`Full audio size: ${fullAudio.length} bytes`);
+            resolve(fullAudio);
+          }
+          else if (message.header.event === 'task-failed') {
+            hasError = true;
+            console.error('Task failed:', message.header.error_message || message.header.message);
+            ws.close();
+            reject(new Error(message.header.error_message || message.header.message || 'Task failed'));
+          }
+          return;
         }
       } catch (e) {
-        console.error('Message parse error:', e);
+        // 不是JSON，可能是二进制音频数据
+      }
+
+      // 如果不是JSON，当作二进制音频数据处理
+      if (Buffer.isBuffer(data) && data.length > 0) {
+        audioChunks.push(data);
+        console.log(`Received binary audio chunk ${audioChunks.length}, size: ${data.length} bytes`);
       }
     });
 
