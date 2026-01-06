@@ -22,3 +22,18 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Test files (keep local only)
+test-*.js
+test-*.wav
+dev-server.js
+START-DEV-SERVER.md
+aliAPI.md
+api/tts-old.js
+api/*.backup
+
+# Claude Code
+.claude/
+
+# Lock files
+package-lock.json
