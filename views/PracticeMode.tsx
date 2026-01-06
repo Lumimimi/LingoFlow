@@ -100,6 +100,8 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       const scriptPrompt = `
         Create a ${isMonologue ? 'monologue' : 'dialogue'} in ${lang} about: "${session.topic}".
         Target Length: ~${wordCount} words.
+        IMPORTANT: Use short, simple sentences (5-8 words per sentence). Break down complex ideas into multiple short sentences.
+        Each speaker's turn should be 1-2 short sentences maximum.
         Format: JSON.
         {
           "dialogue": [{"speaker": "Speaker Name", "text": "Content..."}],
@@ -204,50 +206,127 @@ export const PracticeMode = ({ session, onComplete, onSaveProgress }: {
       if (hasAudio && audioBlobs.length > 0) {
           setLoadingProgress("Merging Audio...");
 
-          // 创建0.5秒的静音数据（22050 Hz * 0.5秒 * 2字节/采样）
-          // 阿里云CosyVoice使用22050Hz采样率
-          const silenceSamples = Math.floor(22050 * 0.5);
-          const silenceData = new Uint8Array(silenceSamples * 2); // 16位采样 = 2字节
-          silenceData.fill(0); // 填充0表示静音
-
-          // 合并多个 WAV 文件，并在之间插入静音
+          // 合并多个 WAV 文件,使用交叉淡化技术实现无缝过渡
           const pcmChunks: Uint8Array[] = [];
           for (let i = 0; i < audioBlobs.length; i++) {
              const blob = audioBlobs[i];
              const arrayBuffer = await blob.arrayBuffer();
-             // 跳过 WAV 头部（44字节），只取PCM数据
-             const pcmData = new Uint8Array(arrayBuffer.slice(44));
 
-             // 对音频片段进行淡入淡出处理，消除断句音
-             const fadeSamples = 100; // 淡入淡出样本数
+             // 动态解析WAV头部，找到真正的PCM数据起始位置
+             const view = new DataView(arrayBuffer);
+             let pcmOffset = 44; // 默认标准WAV头部大小
 
-             // 淡入处理（只对非第一个片段）
-             if (i > 0) {
-                for (let j = 0; j < fadeSamples && j < pcmData.length; j += 2) {
-                   const factor = j / fadeSamples;
-                   const sample = (pcmData[j] | (pcmData[j + 1] << 8));
-                   const newSample = Math.floor(sample * factor);
-                   pcmData[j] = newSample & 0xFF;
-                   pcmData[j + 1] = (newSample >> 8) & 0xFF;
+             // 检查是否是有效的WAV文件 (RIFF header)
+             if (view.byteLength >= 44) {
+                const riff = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+                if (riff === 'RIFF') {
+                   // 查找 'data' chunk，这才是PCM数据的真正起始位置
+                   for (let offset = 12; offset < view.byteLength - 8; offset++) {
+                      const chunk = String.fromCharCode(
+                         view.getUint8(offset), view.getUint8(offset + 1),
+                         view.getUint8(offset + 2), view.getUint8(offset + 3)
+                      );
+                      if (chunk === 'data') {
+                         pcmOffset = offset + 8; // data chunk后面8字节是size，之后才是真正的PCM
+                         break;
+                      }
+                   }
                 }
              }
 
-             // 淡出处理（只对非最后一个片段）
+             // 提取PCM数据
+             let pcmData = new Uint8Array(arrayBuffer.slice(pcmOffset));
+
+             // 修剪音频开头和结尾的静音（避免API返回的音频本身带有静音造成断句音）
+             let startIndex = 0;
+             let endIndex = pcmData.length;
+             const silenceThreshold = 200; // 提高静音阈值，更激进地去除前导静音
+
+             // 找到开头第一个非静音样本
+             for (let j = 0; j < pcmData.length - 1; j += 2) {
+                let sample = pcmData[j] | (pcmData[j + 1] << 8);
+                if (sample & 0x8000) sample -= 0x10000;
+                if (Math.abs(sample) > silenceThreshold) {
+                   startIndex = j;
+                   break;
+                }
+             }
+
+             // 找到结尾最后一个非静音样本
+             for (let j = pcmData.length - 2; j >= 0; j -= 2) {
+                let sample = pcmData[j] | (pcmData[j + 1] << 8);
+                if (sample & 0x8000) sample -= 0x10000;
+                if (Math.abs(sample) > silenceThreshold) {
+                   endIndex = j + 2;
+                   break;
+                }
+             }
+
+             // 提取修剪后的音频数据
+             pcmData = pcmData.slice(startIndex, endIndex);
+
+             // 使用更长的淡入淡出时间,完全消除咔嗒声
+             const fadeSamples = 1100; // 约50ms,使用正弦曲线淡入淡出
+
+             // 淡入处理
+             if (i === 0) {
+                // 第一句：使用极短淡入（约3ms）消除开头的咔嗒声，但不影响语音自然度
+                const firstFadeSamples = 66; // 约3ms（22050 * 0.003 = 66）
+                for (let j = 0; j < firstFadeSamples * 2 && j < pcmData.length; j += 2) {
+                   const progress = j / (firstFadeSamples * 2);
+                   const factor = Math.sin(progress * Math.PI / 2);
+
+                   let sample = pcmData[j] | (pcmData[j + 1] << 8);
+                   if (sample & 0x8000) sample -= 0x10000;
+                   const newSample = Math.floor(sample * factor);
+                   const unsigned = newSample < 0 ? newSample + 0x10000 : newSample;
+                   pcmData[j] = unsigned & 0xFF;
+                   pcmData[j + 1] = (unsigned >> 8) & 0xFF;
+                }
+             } else {
+                // 后续句子：使用正常淡入（50ms）实现平滑过渡
+                for (let j = 0; j < fadeSamples * 2 && j < pcmData.length; j += 2) {
+                   const progress = j / (fadeSamples * 2);
+                   const factor = Math.sin(progress * Math.PI / 2);
+
+                   let sample = pcmData[j] | (pcmData[j + 1] << 8);
+                   if (sample & 0x8000) sample -= 0x10000;
+                   const newSample = Math.floor(sample * factor);
+                   const unsigned = newSample < 0 ? newSample + 0x10000 : newSample;
+                   pcmData[j] = unsigned & 0xFF;
+                   pcmData[j + 1] = (unsigned >> 8) & 0xFF;
+                }
+             }
+
+             // 淡出处理（只对非最后一个片段）使用余弦曲线
              if (i < audioBlobs.length - 1) {
                 const startPos = Math.max(0, pcmData.length - fadeSamples * 2);
                 for (let j = startPos; j < pcmData.length; j += 2) {
-                   const factor = 1 - ((j - startPos) / (fadeSamples * 2));
-                   const sample = (pcmData[j] | (pcmData[j + 1] << 8));
+                   // 使用余弦曲线 (π/2 到 0),比线性淡出更平滑
+                   const progress = (j - startPos) / (fadeSamples * 2);
+                   const factor = Math.cos(progress * Math.PI / 2);
+
+                   let sample = pcmData[j] | (pcmData[j + 1] << 8);
+                   if (sample & 0x8000) sample -= 0x10000;
                    const newSample = Math.floor(sample * factor);
-                   pcmData[j] = newSample & 0xFF;
-                   pcmData[j + 1] = (newSample >> 8) & 0xFF;
+                   const unsigned = newSample < 0 ? newSample + 0x10000 : newSample;
+                   pcmData[j] = unsigned & 0xFF;
+                   pcmData[j + 1] = (unsigned >> 8) & 0xFF;
                 }
              }
 
              pcmChunks.push(pcmData);
 
-             // 在每个音频片段后添加静音（除了最后一个）
+             // 在每个音频片段后添加0.1秒的极短静音（除了最后一个）
              if (i < audioBlobs.length - 1) {
+                const silenceSamples = Math.floor(22050 * 0.1);
+                const silenceData = new Uint8Array(silenceSamples * 2);
+                // 使用极其微小的随机值,完全不可听见
+                for (let k = 0; k < silenceData.length; k += 2) {
+                   const randomSample = Math.floor((Math.random() - 0.5) * 2); // ±1的随机值
+                   silenceData[k] = randomSample & 0xFF;
+                   silenceData[k + 1] = (randomSample >> 8) & 0xFF;
+                }
                 pcmChunks.push(silenceData);
              }
           }

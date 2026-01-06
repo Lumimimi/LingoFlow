@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { text, voice = 'longxiaochun', language = 'German' } = req.body;
+  const { text, voice = 0, language = 'Chinese' } = req.body;
 
   if (!text) {
     return res.status(400).json({ error: 'Text is required' });
@@ -43,26 +43,41 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 语音映射
-    const voiceMap = {
-      0: 'longxiaochun',      // 女声1
-      1: 'longwan',           // 男声1
-      2: 'longyue',           // 女声2
-      3: 'longxiaobei',       // 男声2
-    };
+    // 支持多语言的语言列表（使用 qwen3-tts-flash REST API）
+    const multilingualLanguages = ['German', 'English', 'French', 'Japanese', 'Korean', 'Russian'];
 
-    const selectedVoice = typeof voice === 'number' ? voiceMap[voice] : voice;
+    if (multilingualLanguages.includes(language)) {
+      // 使用 qwen3-tts-flash REST API 处理多语言
+      console.log(`Using qwen3-tts-flash REST API for language: ${language}`);
+      const audioData = await synthesizeSpeechREST(text, voice, language, apiKey);
 
-    // 使用WebSocket调用阿里云CosyVoice
-    const audioData = await synthesizeSpeech(text, selectedVoice, apiKey);
+      res.status(200).json({
+        success: true,
+        audioContent: audioData.toString('base64'),
+        format: 'pcm',
+        sampleRate: 22050
+      });
+    } else {
+      // 使用 CosyVoice WebSocket API 处理中文
+      console.log('Using CosyVoice WebSocket API for Chinese');
 
-    // 返回base64编码的音频数据
-    res.status(200).json({
-      success: true,
-      audioContent: audioData.toString('base64'),
-      format: 'pcm',
-      sampleRate: 22050
-    });
+      const voiceMap = {
+        0: 'longxiaochun',   // 女声1
+        1: 'longwan',        // 男声1
+        2: 'longyue',        // 女声2
+        3: 'longxiaobei',    // 男声2
+      };
+
+      const selectedVoice = typeof voice === 'number' ? voiceMap[voice] : voice;
+      const audioData = await synthesizeSpeechWebSocket(text, selectedVoice, apiKey);
+
+      res.status(200).json({
+        success: true,
+        audioContent: audioData.toString('base64'),
+        format: 'pcm',
+        sampleRate: 22050
+      });
+    }
 
   } catch (error) {
     console.error('TTS Error:', error);
@@ -73,8 +88,72 @@ export default async function handler(req, res) {
   }
 }
 
-// 使用WebSocket调用阿里云CosyVoice TTS
-function synthesizeSpeech(text, voice, apiKey) {
+// 使用 REST API 调用 qwen3-tts-flash（支持多语言）
+async function synthesizeSpeechREST(text, voiceIndex, language, apiKey) {
+  // qwen3-tts-flash 支持的声音列表
+  const qwenVoices = [
+    'Cherry',    // 0: 女声1
+    'Ethan',     // 1: 男声1
+    'Emma',      // 2: 女声2
+    'Oliver'     // 3: 男声2
+  ];
+
+  // 语言类型映射
+  const languageTypeMap = {
+    'German': 'German',
+    'English': 'English',
+    'French': 'French',
+    'Japanese': 'Japanese',
+    'Korean': 'Korean',
+    'Russian': 'Russian'
+  };
+
+  const selectedVoice = typeof voiceIndex === 'number' ? qwenVoices[voiceIndex] : voiceIndex;
+  const languageType = languageTypeMap[language] || 'German';
+
+  console.log(`REST API: model=qwen3-tts-flash, voice=${selectedVoice}, language_type=${languageType}`);
+
+  const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'qwen3-tts-flash',
+      input: {
+        text: text,
+        voice: selectedVoice,
+        language_type: languageType
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`REST API request failed: ${response.status} ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (data.output && data.output.audio && data.output.audio.url) {
+    // 下载音频文件
+    console.log('Downloading audio from:', data.output.audio.url);
+    const audioResponse = await fetch(data.output.audio.url);
+
+    if (!audioResponse.ok) {
+      throw new Error(`Failed to download audio: ${audioResponse.status}`);
+    }
+
+    const audioBuffer = await audioResponse.arrayBuffer();
+    return Buffer.from(audioBuffer);
+  } else {
+    throw new Error('No audio URL in response');
+  }
+}
+
+// 使用WebSocket调用阿里云CosyVoice TTS（中文）
+function synthesizeSpeechWebSocket(text, voice, apiKey) {
   return new Promise((resolve, reject) => {
     const wsUrl = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference/';
     const taskId = uuidv4();
@@ -114,6 +193,8 @@ function synthesizeSpeech(text, voice, apiKey) {
           }
         }
       };
+
+      console.log(`WebSocket: model=cosyvoice-v1, voice=${voice}`);
 
       ws.send(JSON.stringify(runTaskCmd));
     });

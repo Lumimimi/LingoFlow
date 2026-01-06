@@ -40,15 +40,18 @@ export const getApiKey = (): string | undefined => {
   // 1. 尝试从 LocalStorage 读取
   const localKey = localStorage.getItem("lingoflow_apikey");
   if (localKey && localKey.trim() !== "") {
+    console.log('Using API key from LocalStorage');
     return localKey;
   }
 
   // 2. 尝试从 import.meta.env 读取 (Vite 标准)
   // 这是最可靠的方式，因为它能读取到 vite.config.ts 中注入的变量
   if (import.meta.env && import.meta.env.VITE_API_KEY) {
+    console.log('Using API key from .env.local:', import.meta.env.VITE_API_KEY.substring(0, 15) + '...');
     return import.meta.env.VITE_API_KEY;
   }
 
+  console.error('No API key found! Check .env.local or Settings page');
   return undefined;
 };
 
@@ -59,15 +62,8 @@ export const generateSpeechWithAliyunTTS = async (
   speakerIndex: number = 0,
   retries: number = 2
 ): Promise<Blob | null> => {
-  // 阿里云CosyVoice声音映射
-  const voiceMap: Record<number, string> = {
-    0: 'longxiaochun',    // 女声1 - 温柔甜美
-    1: 'longwan',          // 男声1 - 沉稳大气
-    2: 'longyue',          // 女声2 - 知性优雅
-    3: 'longxiaobei',      // 男声2 - 年轻活力
-  };
-
-  const voice = voiceMap[speakerIndex % 4];
+  // 直接使用 speakerIndex (0-3)，让后端API根据语言选择合适的voice
+  const voice = speakerIndex % 4;
 
   // 在开发环境使用本地 API 服务器，生产环境使用 Vercel serverless function
   const isDev = import.meta.env.DEV;
